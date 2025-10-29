@@ -4,7 +4,7 @@ authors: Dan Nguyen, Jennifer Poling, Paul Skentzos
 output: html_document
 date: "2025-10-25"
 ---
-# United Airlines Departure Delays Prject
+# United Airlines Departure Delays Project
 
 This project will examine the relationship between United Airlines departure delays and time of day, time of year, temperature, wind speed, precipitation, and visibility.
 
@@ -64,7 +64,7 @@ flights_weather <- flights_weather %>%
     month %in% c(12, 1, 2) ~ 'winter',
     month %in% c(3, 4, 5) ~ 'spring',
     month %in% c(6, 7, 8) ~ 'summer',
-    month %in% c(9, 10, 11) ~ 'winter'
+    month %in% c(9, 10, 11) ~ 'fall'
   ))
 glimpse(flights_weather)
 ```
@@ -212,5 +212,335 @@ Output the clean .csv
 write_csv(flights_weather, 'flights_clean.csv')
 ```
 
+###### Exploratory Data Analysis  
+####### Departure delay vs time of day and time of year  
+```{r}
+ggplot(flights_weather, aes(x = time_of_day, y = dep_delay)) +
+  geom_boxplot(outlier.size = 0.8, alpha = 0.9) +
+  coord_cartesian(ylim = c(quantile(flights_weather$dep_delay, 0.01, na.rm=TRUE),
+                           quantile(flights_weather$dep_delay, 0.99, na.rm=TRUE))) +
+  facet_wrap(~season) +
+  labs(title = "Departure delay by time of day (faceted by season)",
+       x = "Time of day", y = "Departure delay (minutes)") +
+  theme_minimal(base_size = 13) + theme(axis.text.x = element_text(angle = 70, vjust = 0.5))
+```
+######## Q1: Do flights departing in the evening and at night tends to get delayed longer than flights departing at earlier time?  
+H~0: $\mu$~n - $\mu$~e = 0  
+H~A: $\mu$~n - $\mu$~e $\ge$ 0  
+```{r}
+evening_night = flights_weather$dep_delay[flights_weather$time_of_day == "evening" | flights_weather$time_of_day == "night"]
+earlier = flights_weather$dep_delay[flights_weather$time_of_day != "evening" & flights_weather$time_of_day != "night"]
 
+Time <- c(evening_night, earlier)
+
+# Observed difference in means
+observed <- mean(evening_night) - mean(earlier)
+observed
+
+# Get the sample sizes
+n1 <- length(evening_night)
+n_total <- length(Time)
+
+# Permutation Test
+N <- 10^4 - 1 # number of times to repeat this process
+result <- numeric(N) # space to save the random differences
+
+for (i in 1:N) {
+  index <- sample(n_total, size = n1, replace = FALSE)
+  result[i] <- mean(Time[index]) - mean(Time[-index])
+}
+
+# Plot histogram
+ggplot() + geom_histogram(aes(result), bins = 20) +
+geom_vline(xintercept = observed, linetype = "dashed")
+
+# P-value
+p_value = (sum(result >= observed) + 1)/(N + 1)
+p_value
+```
+Based on the p-value, we reject the null hypothesis. Flights departing in the evening and at night tends to get delayed longer than flights departing at earlier time.  
+######## Q2: Do flights departing in the Holidays Season (Winter & Summer) tends to get delayed longer than flights departing in other seasons?  
+H~0: $\mu$~H - $\mu$~O = 0  
+H~A: $\mu$~H - $\mu$~O $\ge$ 0  
+```{r}
+holiday = flights_weather$dep_delay[flights_weather$season == "winter" | flights_weather$season == "summer"]
+other = flights_weather$dep_delay[flights_weather$season == "spring" & flights_weather$season != "fall"]
+
+Time <- c(holiday, other)
+
+# Observed difference in means
+observed <- mean(holiday) - mean(other)
+observed
+
+# Get the sample sizes
+n1 <- length(holiday)
+n_total <- length(Time)
+
+# Permutation Test
+N <- 10^4 - 1 # number of times to repeat this process
+result <- numeric(N) # space to save the random differences
+
+for (i in 1:N) {
+  index <- sample(n_total, size = n1, replace = FALSE)
+  result[i] <- mean(Time[index]) - mean(Time[-index])
+}
+
+# Plot histogram
+ggplot() + geom_histogram(aes(result), bins = 20) +
+geom_vline(xintercept = observed, linetype = "dashed")
+
+# P-value
+p_value = (sum(result >= observed) + 1)/(N + 1)
+p_value
+```
+Based on the p-value, we reject the null hypothesis. Flights departing in the holidays season to get delayed slightly longer than flights departing in other seasons.  
+
+####### Departure delay vs Temperature
+```{r}
+ggplot(flights_weather, aes(x = temp, y = dep_delay)) +
+  geom_point(alpha = 0.3, size = 0.8) +
+  labs(
+    title = "Relationship between Temperature and Departure Delay",
+    x = "Temperature (°F)",
+    y = "Departure Delay (minutes)"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+```{r}
+flights_weather %>%
+  group_by(temp_q) %>%
+  summarize(mean_delay = mean(dep_delay, na.rm = TRUE),
+            median_delay = median(dep_delay, na.rm = TRUE),
+            n = n()) %>%
+  ggplot(aes(x = temp_q, y = mean_delay)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = round(mean_delay, 1)), vjust = -0.3, size = 3) +
+  labs(
+    title = "Average Departure Delay by Temperature (4 quantiles)",
+    x = "Temperature bin (°F)",
+    y = "Mean dep_delay (minutes)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+ggplot(flights_weather, aes(x = factor(temp_q), y = dep_delay)) +
+  geom_boxplot(outlier.size = 0.6, alpha = 0.7) +
+  labs(
+    title = "Departure Delay Distribution across Temperature Quartiles",
+    x = "Temperature quartile",
+    y = "Departure delay (minutes)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+```
+######## Q1: Do flights departing in warmer temperatures (4th quartile) tends to get delayed longer than flights departing in colder temperature (1st quartile)?  
+H~0: $\mu$~W - $\mu$~C = 0  
+H~A: $\mu$~W - $\mu$~C $\ge$ 0  
+
+```{r}
+cold = flights_weather$dep_delay[flights_weather$temp >= 10.9 & flights_weather$temp < 42.1]
+warm = flights_weather$dep_delay[flights_weather$temp >= 73 & flights_weather$temp <= 100]
+
+Time <- c(warm, cold)
+
+# Observed difference in means
+observed <- mean(warm) - mean(cold)
+observed
+
+# Get the sample sizes
+n1 <- length(warm)
+n_total <- length(Time)
+
+# Permutation Test
+N <- 10^4 - 1 # number of times to repeat this process
+result <- numeric(N) # space to save the random differences
+
+for (i in 1:N) {
+  index <- sample(n_total, size = n1, replace = FALSE)
+  result[i] <- mean(Time[index]) - mean(Time[-index])
+}
+
+# Plot histogram
+ggplot() + geom_histogram(aes(result), bins = 20) +
+geom_vline(xintercept = observed, linetype = "dashed")
+
+# P-value
+p_value = (sum(result >= observed) + 1)/(N + 1)
+p_value
+```
+####### Departure delay vs Wind Speed
+```{r}
+ggplot(flights_weather, aes(x = wind_speed, y = dep_delay)) +
+  geom_point(alpha = 0.3, size = 0.8) +
+  labs(
+    title = "Relationship between Temperature and Departure Delay",
+    x = "Wind Speed",
+    y = "Departure Delay (minutes)"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+```{r}
+flights_weather %>%
+  group_by(wind_speed_q) %>%
+  summarize(mean_delay = mean(dep_delay, na.rm = TRUE),
+            median_delay = median(dep_delay, na.rm = TRUE),
+            n = n()) %>%
+  ggplot(aes(x = wind_speed_q, y = mean_delay)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label = round(mean_delay, 1)), vjust = -0.3, size = 3) +
+  labs(
+    title = "Average Departure Delay by Wind Speed (4 quantiles)",
+    x = "Wind Speed (mph)",
+    y = "Mean dep_delay (minutes)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+######## Q1: Do flights departing in stronger wind (4th quartile) tends to get delayed longer than flights departing in milder wind (1st quartile)?  
+H~0: $\mu$~F - $\mu$~S = 0  
+H~A: $\mu$~F - $\mu$~S $\ge$ 0  
+
+```{r}
+mild = flights_weather$dep_delay[flights_weather$wind_speed >= 0 & flights_weather$wind_speed < 6.9]
+strong = flights_weather$dep_delay[flights_weather$wind_speed >= 13.8 & flights_weather$wind_speed <= 42.6]
+
+Time <- c(strong, mild)
+
+# Observed difference in means
+observed <- mean(strong) - mean(mild)
+observed
+
+# Get the sample sizes
+n1 <- length(mild)
+n_total <- length(Time)
+
+# Permutation Test
+N <- 10^4 - 1 # number of times to repeat this process
+result <- numeric(N) # space to save the random differences
+
+for (i in 1:N) {
+  index <- sample(n_total, size = n1, replace = FALSE)
+  result[i] <- mean(Time[index]) - mean(Time[-index])
+}
+
+# Plot histogram
+ggplot() + geom_histogram(aes(result), bins = 20) +
+geom_vline(xintercept = observed, linetype = "dashed")
+
+# P-value
+p_value = (sum(result >= observed) + 1)/(N + 1)
+p_value
+```
+####### Departure delay vs Precipitation
+```{r}
+ggplot(flights_weather, aes(x = precip_binary, y = dep_delay, fill = precip_binary)) +
+  geom_boxplot(outlier.size = 0.7, alpha = 0.8) +
+  scale_fill_manual(values = c("skyblue3", "gray50"),
+                    labels = c("No precipitation", "Precipitation")) +
+  labs(
+    title = "Departure Delay by Precipitation Condition",
+    x = "Precipitation (0 = No, 1 = Yes)",
+    y = "Departure delay (minutes)",
+    fill = "Precipitation"
+  ) +
+  coord_cartesian(ylim = quantile(flights$dep_delay, c(0.01, 0.99), na.rm = TRUE)) +
+  theme_minimal(base_size = 13)
+```
+######## Q1: Do flights departing in precipitation tends to get delayed longer than flights departing in dry condition?  
+H~0: $\mu$~W - $\mu$~D = 0  
+H~A: $\mu$~W - $\mu$~D $\ge$ 0  
+
+```{r}
+wet = flights_weather$dep_delay[flights_weather$precip_binary == TRUE]
+dry = flights_weather$dep_delay[flights_weather$precip_binary == FALSE]
+
+Time <- c(wet, dry)
+
+# Observed difference in means
+observed <- mean(wet) - mean(dry)
+observed
+
+# Get the sample sizes
+n1 <- length(wet)
+n_total <- length(Time)
+
+# Permutation Test
+N <- 10^4 - 1 # number of times to repeat this process
+result <- numeric(N) # space to save the random differences
+
+for (i in 1:N) {
+  index <- sample(n_total, size = n1, replace = FALSE)
+  result[i] <- mean(Time[index]) - mean(Time[-index])
+}
+
+# Plot histogram
+ggplot() + geom_histogram(aes(result), bins = 20) +
+geom_vline(xintercept = observed, linetype = "dashed")
+
+# P-value
+p_value = (sum(result >= observed) + 1)/(N + 1)
+p_value
+```
+####### Departure delay vs Visibility
+```{r}
+ggplot(flights_weather, aes(x = visib, y = dep_delay)) +
+  geom_point(alpha = 0.3, color = "steelblue") +
+  labs(
+    title = "Departure Delay vs Visibility",
+    x = "Visibility (miles)",
+    y = "Departure Delay (minutes)"
+  ) +
+  theme_minimal()
+```
+
+
+```{r}
+ggplot(flights_weather, aes(x = visib_cat, y = dep_delay, fill = visib_cat)) +
+  geom_boxplot(outlier.alpha = 0.3) +
+  labs(
+    title = "Departure Delay by Visibility Category",
+    x = "Visibility Category",
+    y = "Departure Delay (minutes)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+######## Q1: Do flights departing in poor visibilty tends to get delayed longer than flights departing in good visibility?  
+H~0: $\mu$~P - $\mu$~G = 0  
+H~A: $\mu$~P - $\mu$~G $\ge$ 0  
+
+```{r}
+poor = flights_weather$dep_delay[flights_weather$visib_cat == 'poor']
+good = flights_weather$dep_delay[flights_weather$visib_cat == 'good']
+
+Time <- c(poor, good)
+
+# Observed difference in means
+observed <- mean(poor) - mean(good)
+observed
+
+# Get the sample sizes
+n1 <- length(poor)
+n_total <- length(Time)
+
+# Permutation Test
+N <- 10^4 - 1 # number of times to repeat this process
+result <- numeric(N) # space to save the random differences
+
+for (i in 1:N) {
+  index <- sample(n_total, size = n1, replace = FALSE)
+  result[i] <- mean(Time[index]) - mean(Time[-index])
+}
+
+# Plot histogram
+ggplot() + geom_histogram(aes(result), bins = 20) +
+geom_vline(xintercept = observed, linetype = "dashed")
+
+# P-value
+p_value = (sum(result >= observed) + 1)/(N + 1)
+p_value
+```
 

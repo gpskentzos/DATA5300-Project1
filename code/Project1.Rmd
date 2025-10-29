@@ -8,6 +8,9 @@ date: "2025-10-25"
 
 This project will examine the relationship between United Airlines departure delays and time of day, time of year, temperature, wind speed, precipitation, and visibility.
 
+## Introduction
+We set out to understand when and under what conditions United flights tend to depart late from New York–area airports, using the public nycflights13 dataset for 2013, imported in our RStudio environment. We look at time of day, time of year, and common weather factors: temperature, wind speed, precipitation, and visibility. We summarize what the data shows. To check whether visible patterns are likely more than chance, we use permutation tests, a resampling method that shuffles labels and compares the observed result to what we’d expect if there were no real relationship. 
+
 ###### Install libraries
 ```{r}
 library(tidyverse)
@@ -543,4 +546,53 @@ geom_vline(xintercept = observed, linetype = "dashed")
 p_value = (sum(result >= observed) + 1)/(N + 1)
 p_value
 ```
+
+```{r fig-late-by-precip, message=FALSE, warning=FALSE, fig.cap="Proportion of Late Flights by Precipitation Condition"}
+# Calculate the proportion of late flights under precipitation vs no precipitation
+late_by_precip <- flights_weather %>%
+  group_by(precip_binary) %>%
+  summarise(late_rate = mean(late, na.rm = TRUE), .groups = "drop")
+
+# Bar plot showing the share of late departures by precipitation
+ggplot(late_by_precip, aes(x = precip_binary, y = late_rate, fill = precip_binary)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Proportion of Late Departures by Precipitation",
+    x = "Precipitation (No / Yes)",
+    y = "Late Flights (%)"
+  ) +
+  theme_minimal(base_size = 13)
+late_by_precip
+```
+
+Each bar shows the percentage of flights that departed late within that weather condition.
+The two bars represent conditional probabilities (“chance of a late flight given the condition”), not shares of all flights.
+This matches the permutation test that compares the difference in late-flight proportions between the two weather conditions.
+---
+
+
+```{r fig-late-by-visib, message=FALSE, warning=FALSE, fig.cap="Proportion of Late Flights by Visibility Category"}
+# Calculate the proportion of late flights by visibility category
+late_by_visib <- flights_weather %>%
+  group_by(visib_cat) %>%
+  summarise(late_rate = mean(late, na.rm = TRUE), .groups = "drop")
+
+# Bar plot showing the share of late departures by visibility
+ggplot(late_by_visib, aes(x = visib_cat, y = late_rate, fill = visib_cat)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Proportion of Late Departures by Visibility",
+    x = "Visibility Category",
+    y = "Late Flights (%)"
+  ) +
+  theme_minimal(base_size = 13)
+late_by_visib
+```
+The bars represent the fraction of flights that left late within each visibility category.
+Each bar answers a separate question:
+Out of all flights that day with this visibility, what share were late?
+
+The result shows that low-visibility periods have a higher late-departure rate, consistent with the permutation test for differences in proportions.
 

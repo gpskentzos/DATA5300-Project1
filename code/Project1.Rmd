@@ -378,7 +378,7 @@ p_value
 ggplot(flights_weather, aes(x = wind_speed, y = dep_delay)) +
   geom_point(alpha = 0.3, size = 0.8) +
   labs(
-    title = "Relationship between Temperature and Departure Delay",
+    title = "Relationship between Wind Speed and Departure Delay",
     x = "Wind Speed",
     y = "Departure Delay (minutes)"
   ) +
@@ -511,7 +511,7 @@ ggplot(flights_weather, aes(x = visib_cat, y = dep_delay, fill = visib_cat)) +
   theme_minimal() +
   theme(legend.position = "none")
 ```
-######## Q1: Do flights departing in poor visibilty tends to get delayed longer than flights departing in good visibility?  
+######## Q1: Do flights departing in poor visibilty tend to get delayed longer than flights departing in good visibility?  
 H~0: $\mu$~P - $\mu$~G = 0  
 H~A: $\mu$~P - $\mu$~G $\ge$ 0  
 

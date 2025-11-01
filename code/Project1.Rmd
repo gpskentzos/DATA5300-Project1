@@ -596,3 +596,88 @@ Out of all flights that day with this visibility, what share were late?
 
 The result shows that low-visibility periods have a higher late-departure rate, consistent with the permutation test for differences in proportions.
 
+
+```{r fig-summary-chart-robust, message=FALSE, warning=FALSE, fig.cap="Proportion of Late Flights by Key Factors (Actual Data — robust mapping)"}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stringr)
+
+# 1) Pick dataset safely
+df <- if (exists("flights_weather")) flights_weather else if (exists("flights")) flights else stop("No flights dataset found.")
+
+# 2) Ensure 'late' exists (project uses > 0 minutes as 'late')
+if (!"late" %in% names(df)) {
+  if (!"dep_delay" %in% names(df)) stop("dep_delay missing; cannot compute `late`.")
+  df <- df %>% mutate(late = dep_delay > 0)
+}
+
+# 3) Standardize categories flexibly (handles many label variants)
+df_std <- df %>%
+  mutate(
+    # Time of day (collapse any early bucket to "Early Morning"; any evening/night bucket to "Evening/Night")
+    time_of_day_std = case_when(
+      !is.null(time_of_day) & str_detect(time_of_day, regex("early", TRUE)) ~ "Early Morning",
+      !is.null(time_of_day) & str_detect(time_of_day, regex("night|evening", TRUE)) ~ "Evening/Night",
+      TRUE ~ NA_character_
+    ),
+    # Season (keep only Winter/Summer for the summary bars)
+    season_std = case_when(
+      !is.null(season) & str_detect(season, regex("^win", TRUE)) ~ "Winter",
+      !is.null(season) & str_detect(season, regex("^sum", TRUE)) ~ "Summer",
+      TRUE ~ NA_character_
+    ),
+    # Precipitation (prefer existing bin; else derive from numeric precip if present)
+    precip_bin_std = case_when(
+      "precip_bin" %in% names(df) & str_detect(precip_binary, regex("no", TRUE)) ~ "No Precipitation",
+      "precip_bin" %in% names(df) & str_detect(precip_binary, regex("precip", TRUE)) ~ "Precipitation",
+      !"precip_bin" %in% names(df) & "precip" %in% names(df) & !is.na(precip) & precip > 0 ~ "Precipitation",
+      !"precip_bin" %in% names(df) & "precip" %in% names(df) & !is.na(precip) & precip <= 0 ~ "No Precipitation",
+      TRUE ~ NA_character_
+    ),
+    # Visibility (prefer existing bin; else derive from numeric visib)
+    visib_bin_std = case_when(
+      "visib_bin" %in% names(df) & str_detect(visib_cat, regex("good|normal", TRUE)) ~ "Good Visibility",
+      "visib_bin" %in% names(df) & str_detect(visib_cat, regex("poor|low", TRUE)) ~ "Poor Visibility",
+      !"visib_bin" %in% names(df) & "visib" %in% names(df) & !is.na(visib) & visib >= 5 ~ "Good Visibility",
+      !"visib_bin" %in% names(df) & "visib" %in% names(df) & !is.na(visib) & visib < 5  ~ "Poor Visibility",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Helper to compute late-rate (%) for a single label within a standardized column
+late_rate_of <- function(data, col, value_label) {
+  v <- data %>% filter(!is.na(.data[[col]])) %>% transmute(l = late, g = .data[[col]])
+  if (nrow(v) == 0 || sum(v$g == value_label, na.rm = TRUE) == 0) return(NA_real_)
+  mean(v$l[v$g == value_label], na.rm = TRUE) * 100
+}
+
+# 4) Compute the 8 bars (using standardized labels)
+summary_actual <- tibble::tibble(
+  Factor = c("Early Morning","Evening/Night","Winter","Summer","No Precipitation","Precipitation","Good Visibility","Poor Visibility"),
+  LateRate = c(
+    late_rate_of(df_std, "time_of_day_std", "Early Morning"),
+    late_rate_of(df_std, "time_of_day_std", "Evening/Night"),
+    late_rate_of(df_std, "season_std", "Winter"),
+    late_rate_of(df_std, "season_std", "Summer"),
+    late_rate_of(df_std, "precip_bin_std", "No Precipitation"),
+    late_rate_of(df_std, "precip_bin_std", "Precipitation"),
+    late_rate_of(df_std, "visib_bin_std", "Good Visibility"),
+    late_rate_of(df_std, "visib_bin_std", "Poor Visibility")
+  )
+) %>%
+  filter(!is.na(LateRate))
+
+# 5) Plot
+ggplot(summary_actual, aes(x = reorder(Factor, LateRate), y = LateRate)) +
+  geom_col(fill = "#2b6cb0") +
+  coord_flip() +
+  labs(
+    title = "Proportion of Late Flights by Key Factors (UA, NYC 2013)",
+    x = NULL, y = "Late Flights (%)"
+  ) +
+  theme_minimal(base_size = 12) +
+  scale_y_continuous(expand = expansion(mult = c(0, .05)))
+```
+
+

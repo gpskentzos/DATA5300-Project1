@@ -553,9 +553,14 @@ late_by_precip <- flights_weather %>%
   group_by(precip_binary) %>%
   summarise(late_rate = mean(late, na.rm = TRUE), .groups = "drop")
 
+# Define consistent colors with boxplot
+precip_colors <- c("FALSE" = "#9ecae1",  # same light blue used throughout
+                   "TRUE"  = "#969696")  # same gray used throughout
+
 # Bar plot showing the share of late departures by precipitation
 ggplot(late_by_precip, aes(x = precip_binary, y = late_rate, fill = precip_binary)) +
   geom_col(show.legend = FALSE) +
+  scale_fill_manual(values = precip_colors) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(
     title = "Proportion of Late Departures by Precipitation",

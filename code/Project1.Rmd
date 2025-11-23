@@ -685,4 +685,98 @@ ggplot(summary_actual, aes(x = reorder(Factor, LateRate), y = LateRate)) +
   scale_y_continuous(expand = expansion(mult = c(0, .05)))
 ```
 
+#### Distribution of departure delays
+
+Most flights cluster around 0, but the tail (long delays) drives the averages.
+
+Purpose: Visualize the general pattern of departure delays for United flights.
+What it shows: Most flights cluster around 0 (on-time or slightly late),
+but there’s a long right tail representing extreme delays.
+Relation to project: Demonstrates that delay data are highly skewed,
+motivating the use of nonparametric methods (resampling, permutation tests).
+
+```{r}
+ggplot(flights_weather, aes(x = dep_delay)) +
+  geom_histogram(binwidth = 5, fill = "#2b6cb0", color = "white") +
+  xlim(-20, 180) +
+  labs(
+    title = "Distribution of Departure Delays for United Flights (2013)",
+    x = "Departure Delay (minutes)",
+    y = "Number of Flights"
+  ) +
+  theme_minimal()
+```
+
+#### Seasonal Patterns by Month (Not Just Seasons)
+
+This plot shows the shape of variation across months (e.g., July and August spikes, holiday dips).
+It's of interest to see June, July, and December months and the delays then. 
+
+Purpose: Show how departure delays vary by individual month.
+What it shows: Summer months (June–August) tend to have higher median delays,
+while winter months show more variability due to snow events.
+Relation to project: Refines the “season” grouping and reveals finer trends
+that could otherwise be hidden in broader seasonal categories.
+
+```{r}
+ggplot(flights_weather, aes(x = factor(month), y = dep_delay)) +
+  geom_boxplot(fill = "#5a9bd4") +
+  labs(
+    title = "Monthly Distribution of Departure Delays (United Airlines)",
+    x = "Month",
+    y = "Departure Delay (minutes)"
+  ) +
+  theme_minimal()
+
+```
+
+#### Correlation (Informal) Between Weather Variables and Delays
+
+Purpose: Visually check for possible relationships between temperature and delays.
+What it shows: A mild upward trend at extreme temperatures,
+but high scatter overall — indicating weak correlation.
+Relation to project: This motivates later permutation tests that confirm
+temperature has a statistically detectable but practically small effect.
+
+```{r}
+ggplot(flights_weather, aes(x = temp, y = dep_delay)) +
+  geom_point(alpha = 0.2, color = "#2b6cb0") +
+  geom_smooth(se = FALSE, color = "red") +
+  labs(
+    title = "Departure Delays vs. Temperature",
+    x = "Temperature (°F)",
+    y = "Departure Delay (minutes)"
+  ) +
+  theme_minimal()
+
+```
+
+#### Airport Comparison (EWR vs JFK vs LGA)
+
+This seemed interesting. Perhaps there is a correlation between weather and the airports, 
+and how operations handles weather events even though they are in the same area. 
+Also, there is some discussion that should be had with operations between the various 
+airports to learn from each other.
+
+Purpose: Compare average late-flight rates across NYC airports for United.
+What it shows: Operational differences between airports (e.g., EWR busiest
+and often most delay-prone). LGA and JFK tend to show smaller delay rates.
+Relation to project: This is not not part of hypothesis testing,
+but helps interpret operational variation in the NYC area.
+
+```{r}
+flights_weather %>%
+  group_by(origin) %>%
+  summarise(late_rate = mean(late, na.rm = TRUE)) %>%
+  ggplot(aes(x = origin, y = late_rate, fill = origin)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    title = "Proportion of Late Flights by NYC Airport (United)",
+    x = "Airport",
+    y = "Late Flights (%)"
+  ) +
+  theme_minimal()
+
+```
 

@@ -1,0 +1,403 @@
+
+---
+title: "Project 2: Time Gains for United Airlines Flights from NYC"
+authors: Dan Nguyen, Jennifer Poling, Paul Skentzos
+output: html_document
+date: "`r format(Sys.Date())`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(nycflights13)
+theme_set(theme_minimal())
+```
+
+
+We address the following questions of interest:
+
+1. Does the average net gain differ for flights that departed late versus those that did not? What about flights that departed more than 30 minutes late?  
+2. What are the five most common destination airports for United flights from NYC, and what do the distributions and average gains look like for those destinations?  
+3. Does the average gain per hour differ for flights that departed late versus those that did not? What about for flights more than 30 minutes late?  
+4. Does the average gain per hour differ between longer flights and shorter flights?
+
+
+## Data and Methodology
+
+### Data preparation
+
+We begin with the `flights` table from the `nycflights13` package and restrict attention to flights operated by United Airlines (`carrier == "UA"`). For our analysis of gains we require a recorded departure delay, a recorded arrival delay, and a positive air time (so that the flight has a meaningful duration).
+
+We create several new variables used throughout the report:
+
+- `gain`: net time gained (in minutes), defined as departure delay minus arrival delay.  
+  A positive value means the flight arrived closer to schedule than its departure delay might suggest (it “made up” time). A negative value means it effectively lost additional time.
+- `flight_hours`: flight duration in hours (`air_time / 60`).
+- `gain_per_hour`: the net gain divided by hours, so we can compare longer vs. shorter flights fairly.
+- `late`: an indicator for flights that departed late (`dep_delay > 0`).  
+- `very_late`: an indicator for flights that departed more than 30 minutes late (`dep_delay > 30`).  
+- `late_factor` and `very_late_factor`: labeled versions of these indicators for plots and tables.
+- `length_group`: a categorical variable identifying flights as “Short” or “Long” based on whether their duration is below or above the median flight time among United flights.
+
+```{r data-prep}
+ua_gain <- flights %>%
+  filter(carrier == "UA") %>%
+  filter(
+    !is.na(dep_delay),
+    !is.na(arr_delay),
+    !is.na(air_time),
+    air_time > 0
+  ) %>%
+  mutate(
+    late          = dep_delay > 0,
+    very_late     = dep_delay > 30,
+    gain          = dep_delay - arr_delay,
+    flight_hours  = air_time / 60,
+    gain_per_hour = gain / flight_hours,
+    late_factor = if_else(late, "Late", "On-time/early"),
+    very_late_factor = if_else(
+      very_late,
+      "Very late (>30 min)",
+      "Not very late (≤30 min)"
+    )
+  )
+
+# Define top 5 destinations by count
+top5_dest <- ua_gain %>%
+  count(dest, sort = TRUE) %>%
+  slice_head(n = 5) %>%
+  pull(dest)
+
+# Add a simple length grouping: Short vs Long by median duration
+median_hours <- median(ua_gain$flight_hours, na.rm = TRUE)
+
+ua_gain <- ua_gain %>%
+  mutate(
+    length_group = if_else(
+      flight_hours > median_hours,
+      "Long",
+      "Short"
+    )
+  )
+
+nrow(ua_gain)
+```
+
+
+
+
+
+### 1. Net gain for late vs. not late departures
+
+#### Exploratory comparison: late vs. on-time/early
+
+```{r q1-eda-late}
+ua_gain %>%
+  group_by(late_factor) %>%
+  summarise(
+    n = n(),
+    mean_gain = mean(gain),
+    sd_gain = sd(gain),
+    .groups = "drop"
+  )
+
+ggplot(ua_gain, aes(x = late_factor, y = gain)) +
+  geom_boxplot() +
+  labs(
+    title = "Net Time Gained by Departure Status (United Airlines, NYC)",
+    x = "Departure status",
+    y = "Net gain (minutes; positive = time made up)"
+  )
+```
+
+typical net gains for late flights compared to those that depart on time or early, along with the variability in each group.
+
+#### Hypothesis test and confidence interval: late vs. not late
+
+Let
+
+- The parameter u_late be the mean net gain (in minutes) for United flights that depart late.  
+- The parameter u_ontime be the mean net gain for flights that depart on time or early.
+
+We consider the following hypotheses:
+
+- Null hypothesis (H0): u_late minus u_ontime equals 0. In other words, there is no difference in average net gain between late and on-time/early departures.  
+- Alternative hypothesis (Ha): u_late minus u_ontime is not equal to 0. In other words, there is a difference in average net gain between late and on-time/early departures.
+
+use a two-sample t-test, which allows for potentially different variances in the two groups.
+
+```{r q1-ttest-late}
+late_ttest <- t.test(gain ~ late_factor, data = ua_gain)
+late_ttest
+
+late_diff_mean <- unname(late_ttest$estimate[1] - late_ttest$estimate[2])
+late_ci <- late_ttest$conf.int
+```
+
+
+#### Very late (>30 minutes) vs. not very late
+
+
+- The parameter u_verylate be the mean net gain for flights departing more than 30 minutes late.  
+- The parameter u_notverylate be the mean net gain for all other flights.
+
+Hypotheses:
+
+- Null hypothesis (H0): u_verylate minus u_notverylate equals 0.  
+- Alternative hypothesis (Ha): u_verylate minus u_notverylate is not equal to 0.
+
+```{r q1-ttest-very-late}
+ua_gain %>%
+  group_by(very_late_factor) %>%
+  summarise(
+    n = n(),
+    mean_gain = mean(gain),
+    sd_gain = sd(gain),
+    .groups = "drop"
+  )
+
+ggplot(ua_gain, aes(x = very_late_factor, y = gain)) +
+  geom_boxplot() +
+  labs(
+    title = "Net Time Gained for Very Late vs. Other Departures",
+    x = "Departure category",
+    y = "Net gain (minutes)"
+  )
+
+very_late_ttest <- t.test(gain ~ very_late_factor, data = ua_gain)
+very_late_ttest
+
+very_late_diff_mean <- unname(very_late_ttest$estimate[1] - very_late_ttest$estimate[2])
+very_late_ci <- very_late_ttest$conf.int
+```
+```{r}
+ggplot(ua_gain, aes(x = gain)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", color = "white") +
+  labs(
+    title = "Distribution of Net Time Gain Across All United Flights",
+    x = "Net gain (minutes)",
+    y = "Number of flights"
+  )
+
+```
+
+
+### 3.2 Five most common destination airports
+
+#### Identifying the top five destinations
+
+```{r q2-top5-summary}
+top5_dest
+
+ua_top5 <- ua_gain %>%
+  filter(dest %in% top5_dest)
+
+ua_top5_counts <- ua_top5 %>%
+  count(dest, sort = TRUE)
+
+ua_top5_counts
+```
+
+
+#### Distribution and average gain by destination
+
+For each of these five destinations, we summarize the distribution of net gain and construct a 95% confidence interval for the mean net gain at that destination. Here the parameter of interest for each destination is the mean net gain in minutes for United flights from NYC to that destination.
+
+```{r q2-ci-by-dest}
+ua_top5_summary <- ua_top5 %>%
+  group_by(dest) %>%
+  summarise(
+    n = n(),
+    mean_gain = mean(gain),
+    sd_gain = sd(gain),
+    se = sd_gain / sqrt(n),
+    t_crit = qt(0.975, df = n - 1),
+    ci_lower = mean_gain - t_crit * se,
+    ci_upper = mean_gain + t_crit * se,
+    .groups = "drop"
+  )
+
+ua_top5_summary
+```
+
+```{r q2-boxplot}
+ggplot(ua_top5, aes(x = dest, y = gain)) +
+  geom_boxplot() +
+  labs(
+    title = "Distribution of Net Time Gained by Destination (Top 5 United Destinations)",
+    x = "Destination airport code",
+    y = "Net gain (minutes)"
+  )
+```
+
+```{r}
+ua_top5 %>%
+  mutate(dest = reorder(dest, gain, FUN = mean)) %>%
+  ggplot(aes(x = dest, y = gain)) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(
+    title = "Net Time Gain by Destination (Ordered by Mean Gain)",
+    x = "Destination",
+    y = "Net gain (minutes)"
+  )
+
+```
+
+
+### 3.3 Gain per hour: late vs. not late departures
+
+We now shift from net gain in minutes to gain per hour, which allows us to compare shorter and longer flights more fairly. Here we ask whether flights that depart late make up more time per hour of flight than those that do not.
+
+#### Exploratory comparison
+
+```{r q3-eda-late-gph}
+ua_gain %>%
+  group_by(late_factor) %>%
+  summarise(
+    n = n(),
+    mean_gph = mean(gain_per_hour),
+    sd_gph = sd(gain_per_hour),
+    .groups = "drop"
+  )
+
+ggplot(ua_gain, aes(x = late_factor, y = gain_per_hour)) +
+  geom_boxplot() +
+  labs(
+    title = "Time Gained per Hour by Departure Status",
+    x = "Departure status",
+    y = "Gain per hour (minutes per hour)"
+  )
+```
+
+#### Hypothesis test and CI: gain per hour for late vs. not late
+
+Define
+
+- u_late_gph as the mean gain per hour for late flights.  
+- u_ontime_gph as the mean gain per hour for on-time/early flights.
+
+Hypotheses:
+
+- Null hypothesis (H0): u_late_gph minus u_ontime_gph equals 0.  
+- Alternative hypothesis (Ha): u_late_gph minus u_ontime_gph is not equal to 0.
+
+```{r q3-ttest-late-gph}
+late_gph_ttest <- t.test(gain_per_hour ~ late_factor, data = ua_gain)
+late_gph_ttest
+
+late_gph_diff <- unname(late_gph_ttest$estimate[1] - late_gph_ttest$estimate[2])
+late_gph_ci <- late_gph_ttest$conf.int
+```
+
+
+#### Very late (>30 minutes) vs. others
+
+We also compare gain per hour for very late flights (more than 30 minutes late) versus all others.
+
+Let
+
+- u_verylate_gph be the mean gain per hour for flights departing more than 30 minutes late.  
+- u_notverylate_gph be the mean gain per hour for all others.
+
+Hypotheses:
+
+- Null hypothesis (H0): u_verylate_gph minus u_notverylate_gph equals 0.  
+- Alternative hypothesis (Ha): u_verylate_gph minus u_notverylate_gph is not equal to 0.
+
+```{r q3-ttest-verylate-gph}
+ua_gain %>%
+  group_by(very_late_factor) %>%
+  summarise(
+    n = n(),
+    mean_gph = mean(gain_per_hour),
+    sd_gph = sd(gain_per_hour),
+    .groups = "drop"
+  )
+
+ggplot(ua_gain, aes(x = very_late_factor, y = gain_per_hour)) +
+  geom_boxplot() +
+  labs(
+    title = "Gain per Hour for Very Late vs. Other Departures",
+    x = "Departure category",
+    y = "Gain per hour (minutes per hour)"
+  )
+
+very_late_gph_ttest <- t.test(gain_per_hour ~ very_late_factor, data = ua_gain)
+very_late_gph_ttest
+
+very_late_gph_diff <- unname(very_late_gph_ttest$estimate[1] - very_late_gph_ttest$estimate[2])
+very_late_gph_ci <- very_late_gph_ttest$conf.int
+```
+
+
+### 3.4 Gain per hour for longer vs. shorter flights
+
+Finally, we study how gain per hour depends on the length of the flight. We classify flights as:
+
+- Short: flight duration at or below the median duration among United flights from NYC.  
+- Long: flight duration above the median.
+
+This classification, stored in `length_group`, creates two groups with roughly equal sample sizes.
+
+#### Exploratory comparison
+
+```{r q4-eda-length}
+ua_gain %>%
+  group_by(length_group) %>%
+  summarise(
+    n = n(),
+    mean_gph = mean(gain_per_hour),
+    sd_gph = sd(gain_per_hour),
+    .groups = "drop"
+  )
+
+ggplot(ua_gain, aes(x = length_group, y = gain_per_hour)) +
+  geom_boxplot() +
+  labs(
+    title = "Time Gained per Hour for Short vs. Long Flights",
+    x = "Flight length category",
+    y = "Gain per hour (minutes per hour)"
+  )
+```
+
+#### Hypothesis test and CI: short vs. long
+
+Let
+
+- u_short_gph be the mean gain per hour for shorter flights.  
+- u_long_gph be the mean gain per hour for longer flights.
+
+Hypotheses:
+
+- Null hypothesis (H0): u_long_gph minus u_short_gph equals 0.  
+- Alternative hypothesis (Ha): u_long_gph minus u_short_gph is not equal to 0.
+
+```{r q4-ttest-length}
+length_gph_ttest <- t.test(gain_per_hour ~ length_group, data = ua_gain)
+length_gph_ttest
+
+# By default, the group that is alphabetically first comes first in the estimates
+length_gph_ttest$estimate
+
+# Let's compute Long minus Short explicitly
+mean_long  <- as.numeric(length_gph_ttest$estimate[1])
+mean_short <- as.numeric(length_gph_ttest$estimate[2])
+length_gph_diff <- mean_long - mean_short
+length_gph_ci <- length_gph_ttest$conf.int
+```
+```{r}
+ggplot(ua_gain, aes(x = flight_hours, y = gain_per_hour)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "loess") +
+  labs(
+    title = "Gain per Hour vs. Flight Duration",
+    x = "Flight duration (hours)",
+    y = "Gain per hour (minutes per hour)"
+  )
+
+```
+
+
+## Discussion
+
